@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/vishvananda/netlink"
-
 	klog "k8s.io/klog/v2"
 )
 

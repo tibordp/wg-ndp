@@ -15,10 +15,6 @@ import (
 	klog "k8s.io/klog/v2"
 )
 
-const (
-	listenPort int = 24601
-)
-
 type peer struct {
 	ip            net.IP
 	publicKey     wgtypes.Key
@@ -67,16 +63,16 @@ outer:
 		select {
 		case <-c.closed:
 			break outer
-		case <-time.After(15 * time.Second):
+		case <-time.After(heartbeatServerInterval):
 			currentTime := time.Now()
 			c.mutatePeers(func() error {
 				i := 0
 				for _, peer := range c.peers {
-					if currentTime.Sub(peer.lastHeartbeat) < 30*time.Second {
+					if currentTime.Sub(peer.lastHeartbeat) < staleEvictionInterval {
 						c.peers[i] = peer
 						i++
 					} else {
-						klog.Info("removing stale peer: %v", peer)
+						klog.Info("removing stale peer %v", peer.publicKey.String())
 					}
 				}
 				c.peers = c.peers[:i]
@@ -89,6 +85,14 @@ outer:
 func (c *server) Close() {
 	c.closed <- struct{}{}
 	c.ndp.Close()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Clear the peers
+	c.peers = make([]peer, 0)
+	c.applyPeerConfiguration()
+	c.reconcileRoutes()
 }
 
 func (c *server) shouldAdvertise(i net.IP) dropReason {

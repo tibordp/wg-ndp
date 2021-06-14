@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"os/signal"
+	"syscall"
 	"time"
 
 	sysctl "github.com/lorenzosaino/go-sysctl"
@@ -33,7 +35,6 @@ func (l *listener) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.R
 	err := l.serv.mutatePeers(func() error {
 		for i, _ := range l.serv.peers {
 			if bytes.Equal(l.serv.peers[i].publicKey[:], req.PublicKey) {
-				klog.Infof("refreshing peer %v", l.serv.peers[i].publicKey.String())
 				l.serv.peers[i].ip = ip
 				l.serv.peers[i].lastHeartbeat = time.Now()
 				return nil
@@ -65,7 +66,7 @@ func (l *listener) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.R
 	}, nil
 }
 
-func runServer(ifaceName string, target string) error {
+func runServer(ctx context.Context, ifaceName string, target string) error {
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
 		return fmt.Errorf("could not get interface: %w", err)
@@ -98,6 +99,12 @@ func runServer(ifaceName string, target string) error {
 	})
 
 	klog.Infof("server listening at %v", lis.Addr())
+
+	go func() {
+		<-ctx.Done()
+		s.GracefulStop()
+	}()
+
 	if err := s.Serve(lis); err != nil {
 		return fmt.Errorf("failed to serve: %w", err)
 	}
@@ -105,7 +112,7 @@ func runServer(ifaceName string, target string) error {
 	return nil
 }
 
-func runClient(server string, target string) error {
+func runClient(ctx context.Context, server string, target string) error {
 	link, err := ensureWgLink(target)
 	if err != nil {
 		return fmt.Errorf("could not start responder: %w", err)
@@ -122,8 +129,12 @@ func runClient(server string, target string) error {
 		return fmt.Errorf("could not create client: %w", err)
 	}
 
-	defer cl.Close()
-	cl.Run()
+	go func() {
+		<-ctx.Done()
+		cl.Close()
+	}()
+
+	cl.Run(ctx)
 
 	return nil
 }
@@ -142,10 +153,15 @@ func main() {
 		klog.Fatalf("could set ipv6 forwarding %v", err)
 	}
 
+	context, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	if *clientFlag {
-		runClient(*serverAddress, *targetFlag)
+		if err := runClient(context, *serverAddress, *targetFlag); err != nil {
+			klog.Fatal(err)
+		}
 	} else {
-		if err := runServer(*ifaceFlag, *targetFlag); err != nil {
+		if err := runServer(context, *ifaceFlag, *targetFlag); err != nil {
 			klog.Fatal(err)
 		}
 	}

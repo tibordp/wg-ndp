@@ -167,12 +167,12 @@ func (c *client) Close() {
 	c.conn.Close()
 }
 
-func (c *client) poll() {
+func (c *client) poll(ctx context.Context) {
 	client := pb.NewNdpClient(c.conn)
 
 	now := time.Now()
 	publicKey := c.privateKey.PublicKey()
-	response, err := client.Register(context.Background(), &pb.RegisterRequest{
+	response, err := client.Register(ctx, &pb.RegisterRequest{
 		PublicKey: publicKey[:],
 	})
 
@@ -191,18 +191,24 @@ func (c *client) poll() {
 	}
 }
 
-func (c *client) Run() {
-	c.poll()
+func (c *client) Run(ctx context.Context) {
+	c.poll(ctx)
 
 outer:
 	for {
 		select {
 		case <-c.closed:
 			break outer
-		case <-time.After(15 * time.Second):
-			c.poll()
+		case <-time.After(heartbeatClientInterval):
+			c.poll(ctx)
 		}
 	}
 
+	// Clear the settings
+	klog.Info("cleaning up")
+	c.lastResponse = nil
+	if err := c.applySettings(); err != nil {
+		klog.Warningf("failed to sync settings: %v", err)
+	}
 	klog.Info("finished")
 }
