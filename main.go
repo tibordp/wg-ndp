@@ -98,15 +98,25 @@ func runServer(ctx context.Context, ifaceName string, target string) error {
 		serv: server,
 	})
 
-	klog.Infof("server listening at %v", lis.Addr())
-
+	errChan := make(chan error)
 	go func() {
-		<-ctx.Done()
+		klog.Infof("server listening at %v", lis.Addr())
+		if err := s.Serve(lis); err != nil {
+			errChan <- err
+		}
+	}()
+
+	// terminate your environment gracefully before leaving main function
+	defer func() {
 		s.GracefulStop()
 	}()
 
-	if err := s.Serve(lis); err != nil {
-		return fmt.Errorf("failed to serve: %w", err)
+	// block until either OS signal, or server fatal error
+	select {
+	case err := <-errChan:
+		return err
+	case <-ctx.Done():
+		break
 	}
 
 	return nil
@@ -153,16 +163,19 @@ func main() {
 		klog.Fatalf("could set ipv6 forwarding %v", err)
 	}
 
-	context, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	if *clientFlag {
-		if err := runClient(context, *serverAddress, *targetFlag); err != nil {
+		if err := runClient(ctx, *serverAddress, *targetFlag); err != nil {
 			klog.Fatal(err)
 		}
 	} else {
-		if err := runServer(context, *ifaceFlag, *targetFlag); err != nil {
+		if err := runServer(ctx, *ifaceFlag, *targetFlag); err != nil {
 			klog.Fatal(err)
 		}
 	}
+
+	klog.Infof("finished")
+
 }

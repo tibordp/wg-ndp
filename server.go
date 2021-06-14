@@ -45,6 +45,7 @@ func newServer(upstream *net.Interface, wg wgctrl.Client, wgLink *netlink.Link, 
 		netPrefix:  netPrefix,
 		peers:      make([]peer, 0),
 		mu:         sync.Mutex{},
+		closed:     make(chan struct{}),
 	}
 
 	ndpResponder, err := newNDPResponder(upstream, server.shouldAdvertise)
@@ -83,12 +84,13 @@ outer:
 }
 
 func (c *server) Close() {
-	c.closed <- struct{}{}
+	close(c.closed)
 	c.ndp.Close()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	klog.Infof("cleaning up")
 	// Clear the peers
 	c.peers = make([]peer, 0)
 	c.applyPeerConfiguration()

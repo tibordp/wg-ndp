@@ -210,5 +210,4 @@ outer:
 	if err := c.applySettings(); err != nil {
 		klog.Warningf("failed to sync settings: %v", err)
 	}
-	klog.Info("finished")
 }

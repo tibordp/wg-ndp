@@ -63,11 +63,6 @@ func (n *ndpResponder) Close() error {
 	return n.conn.Close()
 }
 
-func (n *ndpResponder) Gratuitous(ip net.IP) error {
-	err := n.advertise(net.IPv6linklocalallnodes, ip, true)
-	return err
-}
-
 func (n *ndpResponder) Watch(ip net.IP) error {
 	if ip.To4() != nil {
 		return nil
@@ -151,7 +146,7 @@ func (n *ndpResponder) processRequest() dropReason {
 	}
 
 	klog.InfoS("got NDP request for service IP, sending response", "interface", n.intf, "ip", ns.TargetAddress, "senderIP", src, "senderLLAddr", nsLLAddr, "responseMAC", n.hardwareAddr)
-	if err := n.advertise(src, ns.TargetAddress, false); err != nil {
+	if err := n.advertise(src, ns.TargetAddress); err != nil {
 		klog.ErrorS(err, "failed to send ARP reply", "op", "arpReply", "interface", n.intf, "ip", ns.TargetAddress, "senderIP", src, "senderLLAddr", nsLLAddr, "responseMAC", n.hardwareAddr)
 	} else {
 
@@ -159,10 +154,10 @@ func (n *ndpResponder) processRequest() dropReason {
 	return dropReasonNone
 }
 
-func (n *ndpResponder) advertise(dst, target net.IP, gratuitous bool) error {
+func (n *ndpResponder) advertise(dst, target net.IP) error {
 	m := &ndp.NeighborAdvertisement{
-		Solicited:     !gratuitous, // <Adam Jensen> I never asked for this...
-		Override:      gratuitous,  // Should clients replace existing cache entries
+		Solicited:     true,
+		Override:      false,
 		TargetAddress: target,
 		Options: []ndp.Option{
 			&ndp.LinkLayerAddress{
