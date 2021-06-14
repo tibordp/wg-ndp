@@ -31,21 +31,21 @@ func (l *listener) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.R
 	copy(ip[8:], req.PublicKey[:8])
 
 	err := l.serv.mutatePeers(func() error {
-		for _, peer := range l.serv.peers {
-			if bytes.Equal(peer.publicKey[:], req.PublicKey) {
-				klog.Infof("refreshing peer")
-				peer.ip = ip
-				peer.lastHeartbeat = time.Now()
+		for i, _ := range l.serv.peers {
+			if bytes.Equal(l.serv.peers[i].publicKey[:], req.PublicKey) {
+				klog.Infof("refreshing peer %v", l.serv.peers[i].publicKey.String())
+				l.serv.peers[i].ip = ip
+				l.serv.peers[i].lastHeartbeat = time.Now()
 				return nil
 			}
 		}
 
-		klog.Infof("creating new peer")
 		key, err := wgtypes.NewKey(req.PublicKey)
 		if err != nil {
 			return err
 		}
 
+		klog.Infof("creating new peer %v", key.String())
 		l.serv.peers = append(l.serv.peers, peer{
 			ip:            ip,
 			publicKey:     key,

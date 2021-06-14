@@ -91,7 +91,7 @@ func (c *client) reconcileRoutes() error {
 		klog.Infof("adding default route")
 
 		r := netlink.Route{
-			Dst:       nil,
+			Dst:       makeDefaultRoute(),
 			LinkIndex: c.link.Attrs().Index,
 			Scope:     netlink.SCOPE_UNIVERSE,
 		}
@@ -158,8 +158,6 @@ func newClient(address string, wg *wgctrl.Client, wgLink netlink.Link, privateKe
 		privateKey: privateKey,
 		closed:     make(chan struct{}),
 	}
-
-	go cl.Run()
 
 	return &cl, nil
 }
