@@ -98,25 +98,14 @@ func runServer(ctx context.Context, ifaceName string, target string) error {
 		serv: server,
 	})
 
-	errChan := make(chan error)
 	go func() {
-		klog.Infof("server listening at %v", lis.Addr())
-		if err := s.Serve(lis); err != nil {
-			errChan <- err
-		}
-	}()
-
-	// terminate your environment gracefully before leaving main function
-	defer func() {
+		<-ctx.Done()
 		s.GracefulStop()
 	}()
 
-	// block until either OS signal, or server fatal error
-	select {
-	case err := <-errChan:
+	klog.Infof("server listening at %v", lis.Addr())
+	if err := s.Serve(lis); err != nil {
 		return err
-	case <-ctx.Done():
-		break
 	}
 
 	return nil
@@ -177,5 +166,4 @@ func main() {
 	}
 
 	klog.Infof("finished")
-
 }
