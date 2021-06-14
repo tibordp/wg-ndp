@@ -72,15 +72,6 @@ func (c *client) reconcileAddresses() error {
 	return nil
 }
 
-func isDefaultRoute(net net.IPNet) bool {
-	for i := 0; i < len(net.IP); i++ {
-		if net.IP[i] != 0 || net.Mask[i] != 0 {
-			return false
-		}
-	}
-	return true
-}
-
 func (c *client) reconcileRoutes() error {
 	existingRoutes, err := netlink.RouteListFiltered(nl.FAMILY_V6, &netlink.Route{LinkIndex: c.link.Attrs().Index}, netlink.RT_FILTER_OIF)
 	if err != nil {
@@ -90,7 +81,7 @@ func (c *client) reconcileRoutes() error {
 	var defaultRoute *netlink.Route = nil
 	for _, route := range existingRoutes {
 		klog.Infof("existing route: %v", route)
-		if route.Dst != nil && isDefaultRoute(*route.Dst) {
+		if route.Dst == nil {
 			defaultRoute = &route
 		}
 	}
@@ -99,7 +90,7 @@ func (c *client) reconcileRoutes() error {
 		klog.Infof("adding default route")
 
 		r := netlink.Route{
-			Dst:       makeDefaultRoute(),
+			Dst:       nil,
 			LinkIndex: c.link.Attrs().Index,
 			Scope:     netlink.SCOPE_UNIVERSE,
 		}
