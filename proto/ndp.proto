@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+option go_package = "github.com/tibordp/ndp/proto";
+
+service Ndp {
+  rpc Register (RegisterRequest) returns (RegisterResponse) {}
+}
+
+message RegisterRequest {
+  bytes publicKey = 1;
+}
+
+message RegisterResponse {
+  bytes publicKey = 1;
+  bytes ipAddress = 2;
+}
