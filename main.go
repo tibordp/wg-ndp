@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"net"
 	"os/signal"
 	"syscall"
-	"time"
 
 	sysctl "github.com/lorenzosaino/go-sysctl"
 	"golang.zx2c4.com/wireguard/wgctrl"
@@ -28,33 +26,11 @@ type listener struct {
 }
 
 func (l *listener) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
-	ip := make(net.IP, 16)
-	copy(ip, l.serv.netPrefix[:8])
-	copy(ip[8:], req.PublicKey[:8])
-
-	err := l.serv.mutatePeers(func() error {
-		for i, _ := range l.serv.peers {
-			if bytes.Equal(l.serv.peers[i].publicKey[:], req.PublicKey) {
-				l.serv.peers[i].ip = ip
-				l.serv.peers[i].lastHeartbeat = time.Now()
-				return nil
-			}
-		}
-
-		key, err := wgtypes.NewKey(req.PublicKey)
-		if err != nil {
-			return err
-		}
-
-		klog.Infof("creating new peer %v", key.String())
-		l.serv.peers = append(l.serv.peers, peer{
-			ip:            ip,
-			publicKey:     key,
-			lastHeartbeat: time.Now(),
-		})
-
-		return nil
-	})
+	key, err := wgtypes.NewKey(req.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	ip, err := l.serv.RegisterPeer(key)
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +43,11 @@ func (l *listener) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.R
 }
 
 func runServer(ctx context.Context, ifaceName string, target string) error {
+	err := sysctl.Set("net.ipv6.conf.all.forwarding", "1")
+	if err != nil {
+		return fmt.Errorf("could set ipv6 forwarding: %w", err)
+	}
+
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
 		return fmt.Errorf("could not get interface: %w", err)
@@ -123,7 +104,7 @@ func runClient(ctx context.Context, server string, target string) error {
 	}
 
 	privateKey, _ := wgtypes.GeneratePrivateKey()
-	cl, err := newClient(server, client, *link, privateKey)
+	cl, err := newClient(server, client, link, privateKey)
 	if err != nil {
 		return fmt.Errorf("could not create client: %w", err)
 	}
@@ -146,11 +127,6 @@ func main() {
 
 	klog.InitFlags(nil)
 	flag.Parse()
-
-	err := sysctl.Set("net.ipv6.conf.all.forwarding", "1")
-	if err != nil {
-		klog.Fatalf("could set ipv6 forwarding %v", err)
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

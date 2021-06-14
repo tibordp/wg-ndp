@@ -19,7 +19,7 @@ func (wg *wireguardLink) Type() string {
 	return "wireguard"
 }
 
-func ensureWgLink(name string) (*netlink.Link, error) {
+func ensureWgLink(name string) (netlink.Link, error) {
 	link, err := netlink.LinkByName(name)
 	if _, ok := err.(netlink.LinkNotFoundError); ok {
 		klog.Infof("device %q does not exist, creating it", name)
@@ -38,5 +38,5 @@ func ensureWgLink(name string) (*netlink.Link, error) {
 		return nil, err
 	}
 
-	return &link, nil
+	return link, nil
 }
