@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"time"
@@ -28,7 +29,7 @@ type client struct {
 }
 
 func makeDefaultRoute() *net.IPNet {
-	_, defaultRoute, _ := net.ParseCIDR("::/0")
+	_, defaultRoute, _ := net.ParseCIDR("2000::/3")
 	return defaultRoute
 }
 
@@ -80,8 +81,8 @@ func (c *client) reconcileRoutes() error {
 
 	var defaultRoute *netlink.Route = nil
 	for _, route := range existingRoutes {
-		klog.Infof("existing route: %v", route)
-		if route.Dst == nil {
+		actualDefaultRoute := makeDefaultRoute()
+		if route.Dst != nil && route.Dst.IP.Equal(actualDefaultRoute.IP) && bytes.Equal(route.Dst.Mask, actualDefaultRoute.Mask) {
 			defaultRoute = &route
 		}
 	}
