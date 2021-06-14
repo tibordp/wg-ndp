@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"reflect"
 	"sync"
 	"time"
 
@@ -66,7 +65,7 @@ func (c *server) RegisterPeer(publicKey wgtypes.Key) (net.IP, error) {
 	copy(ip, c.netPrefix[:8])
 	copy(ip[8:], publicKey[:8])
 
-	err := c.mutatePeers(func() error {
+	err := c.updatePeers(func() error {
 		for i := range c.peers {
 			if bytes.Equal(c.peers[i].publicKey[:], publicKey[:]) {
 				c.peers[i].ip = ip
@@ -103,7 +102,7 @@ outer:
 			break outer
 		case <-time.After(heartbeatServerInterval):
 			currentTime := time.Now()
-			c.mutatePeers(func() error {
+			err := c.updatePeers(func() error {
 				i := 0
 				for _, peer := range c.peers {
 					if currentTime.Sub(peer.lastHeartbeat) < staleEvictionInterval {
@@ -116,6 +115,10 @@ outer:
 				c.peers = c.peers[:i]
 				return nil
 			})
+
+			if err != nil {
+				klog.Warningf("failed to heartbeat: %v", err)
+			}
 		}
 	}
 }
@@ -213,19 +216,15 @@ func (c *server) applyPeerConfiguration() error {
 	return nil
 }
 
-func (c *server) mutatePeers(f func() error) error {
+func (c *server) updatePeers(updateFunc func() error) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	oldPeers := make([]peer, len(c.peers))
 	copy(oldPeers, c.peers)
 
-	if err := f(); err != nil {
+	if err := updateFunc(); err != nil {
 		return err
-	}
-
-	if reflect.DeepEqual(oldPeers, c.peers) {
-		return nil
 	}
 
 	for _, peer := range c.peers {
@@ -235,8 +234,13 @@ func (c *server) mutatePeers(f func() error) error {
 		c.ndp.Unwatch(peer.ip)
 	}
 
-	c.applyPeerConfiguration()
-	c.reconcileRoutes()
+	if err := c.applyPeerConfiguration(); err != nil {
+		return err
+	}
+
+	if err := c.reconcileRoutes(); err != nil {
+		return err
+	}
 
 	return nil
 }

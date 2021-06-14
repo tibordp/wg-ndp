@@ -109,13 +109,6 @@ func (c *client) reconcileRoutes() error {
 }
 
 func (c *client) applySettings() error {
-	if err := c.reconcileAddresses(); err != nil {
-		return err
-	}
-	if err := c.reconcileRoutes(); err != nil {
-		return err
-	}
-
 	serverEndpoint, err := net.ResolveUDPAddr("udp", c.address)
 	if err != nil {
 		return err
@@ -138,6 +131,13 @@ func (c *client) applySettings() error {
 		ReplacePeers: true,
 		Peers:        peers,
 	}); err != nil {
+		return err
+	}
+
+	if err := c.reconcileAddresses(); err != nil {
+		return err
+	}
+	if err := c.reconcileRoutes(); err != nil {
 		return err
 	}
 

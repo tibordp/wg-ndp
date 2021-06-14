@@ -152,10 +152,9 @@ func (n *ndpResponder) processRequest() dropReason {
 
 	klog.InfoS("got NDP request for service IP, sending response", "interface", n.intf, "ip", ns.TargetAddress, "senderIP", src, "senderLLAddr", nsLLAddr, "responseMAC", n.hardwareAddr)
 	if err := n.advertise(src, ns.TargetAddress, false); err != nil {
-		klog.ErrorS(err, "failed to send ARP reply", "op", "arpReply", "interface", n.intf, "ip", ns.TargetAddress, "senderIP", src, "senderLLAddr", nsLLAddr, "responseMAC", n.hardwareAddr)
-	} else {
-
+		klog.ErrorS(err, "failed to send NDP reply", "op", "arpReply", "interface", n.intf, "ip", ns.TargetAddress, "senderIP", src, "senderLLAddr", nsLLAddr, "responseMAC", n.hardwareAddr)
 	}
+
 	return dropReasonNone
 }
 
