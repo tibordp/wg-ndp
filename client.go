@@ -89,6 +89,7 @@ func (c *client) reconcileRoutes() error {
 
 	var defaultRoute *netlink.Route = nil
 	for _, route := range existingRoutes {
+		klog.Infof("existing route: %v", route)
 		if route.Dst != nil && isDefaultRoute(*route.Dst) {
 			defaultRoute = &route
 		}
