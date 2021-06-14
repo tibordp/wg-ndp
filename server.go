@@ -87,6 +87,11 @@ func (c *server) RegisterPeer(publicKey wgtypes.Key) (net.IP, error) {
 		return nil, err
 	}
 
+	// Send a gratuitous advertisment to speed up propagation
+	if err := c.ndp.Gratuitous(ip); err != nil {
+		klog.Warningf("could not send gratuitous peer advertisment: %w", err)
+	}
+
 	return ip, nil
 }
 
