@@ -109,7 +109,7 @@ outer:
 						c.peers[i] = peer
 						i++
 					} else {
-						klog.Info("removing stale peer %v", peer.publicKey.String())
+						klog.Infof("removing stale peer %v", peer.publicKey.String())
 					}
 				}
 				c.peers = c.peers[:i]
@@ -133,7 +133,7 @@ func (c *server) Close() {
 	klog.Infof("cleaning up")
 	// Clear the peers
 	c.peers = make([]peer, 0)
-	c.applyPeerConfiguration()
+	c.reconcileWireguardConfig()
 	c.reconcileRoutes()
 }
 
@@ -194,7 +194,7 @@ func (c *server) reconcileRoutes() error {
 	return nil
 }
 
-func (c *server) applyPeerConfiguration() error {
+func (c *server) reconcileWireguardConfig() error {
 	device, err := c.wg.Device(c.link.Attrs().Name)
 	if err != nil {
 		return err
@@ -243,7 +243,7 @@ func (c *server) applyPeerConfiguration() error {
 		}
 
 		listenPort := listenPort
-		if err := c.wg.ConfigureDevice(c.link.Attrs().Name, wgtypes.Config{
+		if err := c.wg.ConfigureDevice(device.Name, wgtypes.Config{
 			PrivateKey: &c.privateKey,
 			ListenPort: &listenPort,
 			Peers:      peerConfigs,
@@ -273,10 +273,9 @@ func (c *server) updatePeers(updateFunc func() error) error {
 		c.ndp.Unwatch(peer.ip)
 	}
 
-	if err := c.applyPeerConfiguration(); err != nil {
+	if err := c.reconcileWireguardConfig(); err != nil {
 		return err
 	}
-
 	if err := c.reconcileRoutes(); err != nil {
 		return err
 	}

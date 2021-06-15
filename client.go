@@ -25,7 +25,6 @@ type client struct {
 	address                string
 	lastResponse           *pb.RegisterResponse
 	lastSuccessfulResponse *time.Time
-	lastEndpoint           *net.UDPAddr
 	closed                 chan struct{}
 }
 
@@ -109,41 +108,87 @@ func (c *client) reconcileRoutes() error {
 	return nil
 }
 
-func (c *client) applySettings(replace bool) error {
+func (c *client) reconcileWireguardConfig() error {
 	serverEndpoint, err := net.ResolveUDPAddr("udp", c.address)
 	if err != nil {
 		return err
 	}
 
-	peers := make([]wgtypes.PeerConfig, 0)
-	if c.lastResponse != nil {
-		key, _ := wgtypes.NewKey(c.lastResponse.PublicKey)
-		peers = append(peers, wgtypes.PeerConfig{
-			PublicKey: key,
-			AllowedIPs: []net.IPNet{
-				*makeDefaultRoute(),
-			},
-			Endpoint: serverEndpoint,
-		})
-	}
-
-	if err := c.wg.ConfigureDevice(c.link.Attrs().Name, wgtypes.Config{
-		PrivateKey:   &c.privateKey,
-		ReplacePeers: replace || c.lastResponse == nil || (serverEndpoint.String() == c.lastResponse.String()),
-		Peers:        peers,
-	}); err != nil {
+	device, err := c.wg.Device(c.link.Attrs().Name)
+	if err != nil {
 		return err
 	}
 
+	changeset := make(map[string]wgtypes.PeerConfig)
+	for _, peer := range device.Peers {
+		changeset[peer.PublicKey.String()] = wgtypes.PeerConfig{
+			PublicKey:         peer.PublicKey,
+			Remove:            true,
+			AllowedIPs:        peer.AllowedIPs,
+			Endpoint:          peer.Endpoint,
+			ReplaceAllowedIPs: true,
+		}
+	}
+
+	if c.lastResponse != nil {
+		actualDefaultRoute := makeDefaultRoute()
+		publicKey, _ := wgtypes.NewKey(c.lastResponse.PublicKey)
+		if existing, ok := changeset[publicKey.String()]; ok {
+			if existing.Endpoint.IP.Equal(serverEndpoint.IP) &&
+				existing.Endpoint.Port == serverEndpoint.Port &&
+				len(existing.AllowedIPs) == 1 &&
+				existing.AllowedIPs[0].IP.Equal(actualDefaultRoute.IP) &&
+				bytes.Equal(existing.AllowedIPs[0].Mask, actualDefaultRoute.Mask) {
+				delete(changeset, publicKey.String())
+			} else {
+				existing.AllowedIPs = []net.IPNet{
+					*makeDefaultRoute(),
+				}
+				existing.Endpoint = serverEndpoint
+				existing.Remove = false
+				existing.UpdateOnly = true
+				changeset[publicKey.String()] = existing
+			}
+		} else {
+			changeset[publicKey.String()] = wgtypes.PeerConfig{
+				PublicKey: publicKey,
+				Endpoint:  serverEndpoint,
+				AllowedIPs: []net.IPNet{
+					*makeDefaultRoute(),
+				},
+			}
+		}
+	}
+
+	if len(changeset) > 0 {
+		peerConfigs := make([]wgtypes.PeerConfig, 0)
+		for _, v := range changeset {
+			peerConfigs = append(peerConfigs, v)
+		}
+
+		listenPort := listenPort
+		if err := c.wg.ConfigureDevice(device.Name, wgtypes.Config{
+			PrivateKey: &c.privateKey,
+			ListenPort: &listenPort,
+			Peers:      peerConfigs,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *client) applySettings() error {
+	if err := c.reconcileWireguardConfig(); err != nil {
+		return err
+	}
 	if err := c.reconcileAddresses(); err != nil {
 		return err
 	}
 	if err := c.reconcileRoutes(); err != nil {
 		return err
 	}
-
-	c.lastEndpoint = serverEndpoint
-
 	return nil
 }
 
@@ -189,7 +234,7 @@ func (c *client) poll(ctx context.Context) {
 		c.lastResponse = response
 	}
 
-	if err := c.applySettings(false); err != nil {
+	if err := c.applySettings(); err != nil {
 		klog.Warningf("failed to sync settings: %v", err)
 	}
 }
@@ -210,7 +255,7 @@ outer:
 	// Clear the settings
 	klog.Info("cleaning up")
 	c.lastResponse = nil
-	if err := c.applySettings(true); err != nil {
+	if err := c.applySettings(); err != nil {
 		klog.Warningf("failed to sync settings: %v", err)
 	}
 }
