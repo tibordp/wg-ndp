@@ -195,22 +195,61 @@ func (c *server) reconcileRoutes() error {
 }
 
 func (c *server) applyPeerConfiguration() error {
-	peerConfigs := make([]wgtypes.PeerConfig, len(c.peers))
-	for i, v := range c.peers {
-		peerConfigs[i].AllowedIPs = []net.IPNet{
-			*netlink.NewIPNet(v.ip),
-		}
-		peerConfigs[i].PublicKey = v.publicKey
+	device, err := c.wg.Device(c.link.Attrs().Name)
+	if err != nil {
+		return err
 	}
 
-	listenPort := listenPort
-	if err := c.wg.ConfigureDevice(c.link.Attrs().Name, wgtypes.Config{
-		PrivateKey:   &c.privateKey,
-		ListenPort:   &listenPort,
-		ReplacePeers: true,
-		Peers:        peerConfigs,
-	}); err != nil {
-		return err
+	changeset := make(map[string]wgtypes.PeerConfig)
+	for _, peer := range device.Peers {
+		changeset[peer.PublicKey.String()] = wgtypes.PeerConfig{
+			PublicKey:         peer.PublicKey,
+			Remove:            true,
+			AllowedIPs:        peer.AllowedIPs,
+			ReplaceAllowedIPs: true,
+		}
+	}
+
+	for _, peer := range c.peers {
+		cidr := netlink.NewIPNet(peer.ip)
+		if existing, ok := changeset[peer.publicKey.String()]; ok {
+			if len(existing.AllowedIPs) == 1 {
+				ones, bits := existing.AllowedIPs[0].Mask.Size()
+				if existing.AllowedIPs[0].IP.Equal(peer.ip) && ones == 128 && bits == 128 {
+					delete(changeset, peer.publicKey.String())
+					continue
+				}
+			}
+			existing.AllowedIPs = []net.IPNet{
+				*cidr,
+			}
+			existing.Remove = false
+			existing.UpdateOnly = true
+			changeset[peer.publicKey.String()] = existing
+		} else {
+			changeset[peer.publicKey.String()] = wgtypes.PeerConfig{
+				PublicKey: peer.publicKey,
+				AllowedIPs: []net.IPNet{
+					*cidr,
+				},
+			}
+		}
+	}
+
+	if len(changeset) > 0 {
+		peerConfigs := make([]wgtypes.PeerConfig, 0)
+		for _, v := range changeset {
+			peerConfigs = append(peerConfigs, v)
+		}
+
+		listenPort := listenPort
+		if err := c.wg.ConfigureDevice(c.link.Attrs().Name, wgtypes.Config{
+			PrivateKey: &c.privateKey,
+			ListenPort: &listenPort,
+			Peers:      peerConfigs,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

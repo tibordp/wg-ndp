@@ -25,6 +25,7 @@ type client struct {
 	address                string
 	lastResponse           *pb.RegisterResponse
 	lastSuccessfulResponse *time.Time
+	lastEndpoint           *net.UDPAddr
 	closed                 chan struct{}
 }
 
@@ -108,7 +109,7 @@ func (c *client) reconcileRoutes() error {
 	return nil
 }
 
-func (c *client) applySettings() error {
+func (c *client) applySettings(replace bool) error {
 	serverEndpoint, err := net.ResolveUDPAddr("udp", c.address)
 	if err != nil {
 		return err
@@ -128,7 +129,7 @@ func (c *client) applySettings() error {
 
 	if err := c.wg.ConfigureDevice(c.link.Attrs().Name, wgtypes.Config{
 		PrivateKey:   &c.privateKey,
-		ReplacePeers: true,
+		ReplacePeers: replace || c.lastResponse == nil || (serverEndpoint.String() == c.lastResponse.String()),
 		Peers:        peers,
 	}); err != nil {
 		return err
@@ -140,6 +141,8 @@ func (c *client) applySettings() error {
 	if err := c.reconcileRoutes(); err != nil {
 		return err
 	}
+
+	c.lastEndpoint = serverEndpoint
 
 	return nil
 }
@@ -186,7 +189,7 @@ func (c *client) poll(ctx context.Context) {
 		c.lastResponse = response
 	}
 
-	if err := c.applySettings(); err != nil {
+	if err := c.applySettings(false); err != nil {
 		klog.Warningf("failed to sync settings: %v", err)
 	}
 }
@@ -207,7 +210,7 @@ outer:
 	// Clear the settings
 	klog.Info("cleaning up")
 	c.lastResponse = nil
-	if err := c.applySettings(); err != nil {
+	if err := c.applySettings(true); err != nil {
 		klog.Warningf("failed to sync settings: %v", err)
 	}
 }
