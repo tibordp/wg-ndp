@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 )
 
 type peer struct {
-	ip            net.IP
+	ip            netip.Addr
 	publicKey     wgtypes.Key
 	lastHeartbeat time.Time
 }
@@ -24,7 +25,7 @@ type peer struct {
 type server struct {
 	ndp        *ndpResponder
 	wg         *wgctrl.Client
-	netPrefix  net.IP
+	netPrefix  netip.Addr
 	link       netlink.Link
 	privateKey wgtypes.Key
 	peers      []peer
@@ -58,12 +59,14 @@ func newServer(upstream *net.Interface, wg wgctrl.Client, wgLink netlink.Link, p
 	return &server, nil
 }
 
-func (c *server) RegisterPeer(publicKey wgtypes.Key) (net.IP, error) {
+func (c *server) RegisterPeer(publicKey wgtypes.Key) (netip.Addr, error) {
 	// Host part of the IP address is the first 64 bits of the public key
 	// for convenience
-	ip := make(net.IP, 16)
-	copy(ip, c.netPrefix[:8])
-	copy(ip[8:], publicKey[:8])
+	var ip_bytes [16]byte
+	copy(ip_bytes[:8], c.netPrefix.AsSlice()[:8])
+	copy(ip_bytes[8:], publicKey[:8])
+
+	ip := netip.AddrFrom16(ip_bytes)
 
 	err := c.updatePeers(func() error {
 		for i := range c.peers {
@@ -83,7 +86,7 @@ func (c *server) RegisterPeer(publicKey wgtypes.Key) (net.IP, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return netip.IPv6Unspecified(), err
 	}
 
 	// Send a gratuitous advertisment to speed up propagation
@@ -137,12 +140,12 @@ func (c *server) Close() {
 	c.reconcileRoutes()
 }
 
-func (c *server) shouldAdvertise(i net.IP) dropReason {
+func (c *server) shouldAdvertise(i netip.Addr) dropReason {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for _, peer := range c.peers {
-		if peer.ip.Equal(i) {
+		if peer.ip == i {
 			return dropReasonNone
 		}
 	}
@@ -164,7 +167,7 @@ func (c *server) reconcileRoutes() error {
 
 	missing := make([]netlink.Route, 0)
 	for _, peer := range c.peers {
-		cidr := netlink.NewIPNet(peer.ip)
+		cidr := netlink.NewIPNet(peer.ip.AsSlice())
 		if _, ok := redundant[cidr.String()]; ok {
 			delete(redundant, cidr.String())
 		} else {
@@ -211,11 +214,11 @@ func (c *server) reconcileWireguardConfig() error {
 	}
 
 	for _, peer := range c.peers {
-		cidr := netlink.NewIPNet(peer.ip)
+		cidr := netlink.NewIPNet(peer.ip.AsSlice())
 		if existing, ok := changeset[peer.publicKey.String()]; ok {
 			if len(existing.AllowedIPs) == 1 {
 				ones, bits := existing.AllowedIPs[0].Mask.Size()
-				if existing.AllowedIPs[0].IP.Equal(peer.ip) && ones == 128 && bits == 128 {
+				if existing.AllowedIPs[0].IP.Equal(peer.ip.AsSlice()) && ones == 128 && bits == 128 {
 					delete(changeset, peer.publicKey.String())
 					continue
 				}
@@ -283,10 +286,10 @@ func (c *server) updatePeers(updateFunc func() error) error {
 	return nil
 }
 
-func getInterfacePrefix(iface *net.Interface) (net.IP, error) {
+func getInterfacePrefix(iface *net.Interface) (netip.Addr, error) {
 	addrs, err := iface.Addrs()
 	if err != nil {
-		return nil, err
+		return netip.IPv6Unspecified(), err
 	}
 
 	for _, addr := range addrs {
@@ -294,7 +297,8 @@ func getInterfacePrefix(iface *net.Interface) (net.IP, error) {
 		case *net.IPNet:
 			ones, bits := v.Mask.Size()
 			if ones == 64 && bits == 128 && v.IP.IsGlobalUnicast() {
-				return v.IP, nil
+				ip, _ := netip.AddrFromSlice(v.IP)
+				return ip, nil
 			}
 		default:
 			continue
@@ -302,5 +306,5 @@ func getInterfacePrefix(iface *net.Interface) (net.IP, error) {
 
 	}
 
-	return nil, fmt.Errorf("could not find a suitable ip address")
+	return netip.Addr{}, fmt.Errorf("could not find a suitable ip address")
 }

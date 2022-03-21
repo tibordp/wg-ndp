@@ -38,7 +38,7 @@ func (l *listener) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.R
 	pubKey := l.serv.privateKey.PublicKey()
 	return &pb.RegisterResponse{
 		PublicKey: pubKey[:],
-		IpAddress: ip,
+		IpAddress: ip.AsSlice(),
 	}, nil
 }
 
