@@ -20,7 +20,8 @@ NB, the server can actually run anywhere, doesn't have to be a local network, as
 Have a Go toolchain installed
 
 ```bash
-GOBIN=/usr/local/bin go install github.com/tibordp/wg-ndp@latest 
+go install github.com/tibordp/wg-ndp@latest 
+sudo cp $(go env GOPATH)/bin/wg-ndp /usr/local/bin/
 ```
 
 WSL2 does not run systemd, so in order for the client to always be running, it can be daemonized with something like [god](https://github.com/fiorix/go-daemon).
@@ -40,8 +41,8 @@ fi
 On the Raspberry Pi, simply use the provided systemd unit file
 
 ```bash
-cp ./wg-ndp.service /etc/systemd/system/
-systemctl enable wg-ndp
+sudo cp ./wg-ndp.service /etc/systemd/system/
+sudo systemctl enable wg-ndp
 ```
 
 The default unit file assumes that your upstream interface is called `eth0`. If that is not so, change the line in it

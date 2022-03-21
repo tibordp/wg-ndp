@@ -123,7 +123,7 @@ func main() {
 	clientFlag := flag.Bool("client", false, "run as a client")
 	serverAddress := flag.String("server", "", "server address")
 	ifaceFlag := flag.String("interface", "eth0", "interface to bind on")
-	targetFlag := flag.String("target", "wg0", "wireguard interface")
+	targetFlag := flag.String("target", "wg-ndp", "wireguard interface")
 
 	klog.InitFlags(nil)
 	flag.Parse()
