@@ -1,8 +1,8 @@
-# "How to get IPv6 connectivity in WSL2"
+# "How to get IPv6 connectivity in WSL2?"
 
 This is a bad and overengineered hack to get IPv6 connectivity in WSL2 using another Linux device on the home network (e.g. a Raspberry Pi).
 
-It consists of two parts, a client and a server. Server is meant to run on the Raspberry Pi and the client runs inside WSL2. Server advertises an additional IPv6 address using NDP and routes all the traffic for that IP to the client via an automatically managed Wireguard tunnel.
+`wg-ndp` consists of two parts, a client and a server. Server is meant to run on the Raspberry Pi and the client runs inside WSL2. Server advertises an additional IPv6 address using NDP and routes all the traffic for that IP to the client via an automatically managed Wireguard tunnel.
 
 ## How it works
 
@@ -17,13 +17,10 @@ NB, the server can actually run anywhere, doesn't have to be a local network, as
 
 ## Installation
 
-Build from source
+Have a Go toolchain installed
 
 ```bash
-go mod download
-go generate ./...
-go build
-sudo cp ndp /usr/bin/ndp
+GOBIN=/usr/local/bin go install github.com/tibordp/wg-ndp@latest 
 ```
 
 WSL2 does not run systemd, so in order for the client to always be running, it can be daemonized with something like [god](https://github.com/fiorix/go-daemon).
@@ -31,26 +28,26 @@ WSL2 does not run systemd, so in order for the client to always be running, it c
 Put this into your favorite shell's rc file:
 
 ```bash 
-if [ ! -f /var/run/ndp.pid ]; then
+if [ ! -f /var/run/wg-ndp.pid ]; then
   sudo god \
-        --pidfile /var/run/ndp.pid \
+        --pidfile /var/run/wg-ndp.pid \
         --nohup \
-        --logfile /var/log/ndp.log -- \
-        /usr/bin/ndp -client -server <raspberry pi ipv4 url>:24601
+        --logfile /var/log/wg-ndp.log -- \
+        /usr/local/bin/wg-ndp -client -server <raspberry pi ipv4 url>:24601
 fi
 ```
 
 On the Raspberry Pi, simply use the provided systemd unit file
 
 ```bash
-sudo cp ./ndp.service /etc/systemd/system/ndp.service
-sudo systemctl enable ndp
+cp ./wg-ndp.service /etc/systemd/system/
+systemctl enable wg-ndp
 ```
 
 The default unit file assumes that your upstream interface is called `eth0`. If that is not so, change the line in it
 
 ```diff
-< ExecStart=/usr/bin/ndp
-> ExecStart=/usr/bin/ndp --interface <whatever>
+< ExecStart=/usr/local/bin/wg-ndp
+> ExecStart=/usr/local/bin/wg-ndp --interface <whatever>
 ```
 

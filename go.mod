@@ -1,4 +1,4 @@
-module github.com/tibordp/ndp
+module github.com/tibordp/wg-ndp
 
 go 1.18
 

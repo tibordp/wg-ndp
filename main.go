@@ -12,7 +12,7 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
-	pb "github.com/tibordp/ndp/proto"
+	pb "github.com/tibordp/wg-ndp/proto"
 	"google.golang.org/grpc"
 
 	klog "k8s.io/klog/v2"

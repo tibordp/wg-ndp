@@ -1,5 +1,5 @@
 [Unit]
-Description=ndp serving daemon
+Description=IPv6 autotunneling daemon
 After=network.target
 StartLimitIntervalSec=0
 
@@ -7,7 +7,7 @@ StartLimitIntervalSec=0
 Type=simple
 Restart=always
 RestartSec=1
-ExecStart=/usr/bin/ndp
+ExecStart=/usr/local/bin/wg-ndp
 
 [Install]
 WantedBy=multi-user.target
